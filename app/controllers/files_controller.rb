@@ -9,15 +9,16 @@ class FilesController < ApplicationController
     raise ActiveModel::ForbiddenAttributesError, 'Id paramater is not allowed.' if not params[:id].blank?
     raise ArgumentError, 'File parameter is required.' if params[:file].blank?
     raise ArgumentError, 'X-Rewrite-URL header is missing.' if request.headers['X-Rewrite-URL'].blank?
-    
 
     uploaded_file = params[:file]
 
     file = { type: "files", id: SecureRandom.uuid, attributes: {} }
-    file_uri = FILE_SERVICE_RESOURCE_BASE + 'files/' + file[:id]
-    file[:attributes][:name] = "#{file[:id]}.#{uploaded_file.original_filename.split('.').last}" # uuid.extension
-    file_path = file_path(file[:attributes][:name])
+    original_filename = uploaded_file.original_filename
+    file[:attributes][:name] = original_filename
+    file[:attributes][:extension] = original_filename.include?('.') ? uploaded_file.original_filename.split('.').last : ''
+    file_uri = "share://#{file[:id]}"
     file[:attributes][:format] = uploaded_file.content_type
+    file_path = file_path(file[:id])
     File.open(file_path, 'wb') { |f| f.write(uploaded_file.read) }
     file[:attributes][:size] = File.size(file_path)
     links = { self: "#{request.headers['X-Rewrite-URL'].chomp '/'}/#{file[:id]}" }
@@ -30,8 +31,8 @@ class FilesController < ApplicationController
     query += "         <#{MU_CORE.uuid}> \"#{file[:id]}\" ;"
     query += "         <#{DC.format}> \"#{file[:attributes][:format]}\" ;"
     query += "         <#{NFO.fileSize}> \"#{file[:attributes][:size]}\"^^xsd:integer ;"
-    query += "         <#{NFO.fileUrl}> \"file://#{file_path}\" ;"
-    query += "         <#{DC.created}> \"#{now}\"^^xsd:dateTime ;"
+    query += "         <#{DBPEDIA.fileExtension}> \"#{file[:attributes][:extension]}\";"
+    query += "         <#{NFO.fileCreated}> \"#{now}\"^^xsd:dateTime ;"
     query += "         <#{DC.modified}> \"#{now}\"^^xsd:dateTime ."
     # TODO add creator/contributor
     query += "   }"
@@ -133,6 +134,7 @@ class FilesController < ApplicationController
   end
 
   rescue_from ArgumentError do |e|
+    logger.warn e
     render json: { errors: [{ title: e.message }] }, status: :bad_request
   end
 
